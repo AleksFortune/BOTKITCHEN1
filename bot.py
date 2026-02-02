@@ -6,7 +6,7 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, 
     MessageHandler, filters, ContextTypes, ConversationHandler
 )
-from sqlalchemy import select  # <-- ДОБАВЛЕН ЭТОТ ИМПОРТ
+from sqlalchemy import select
 
 from config import TELEGRAM_TOKEN, ADMIN_ID, SUBSCRIPTION_PLANS, FREE_AI_QUESTIONS_PER_DAY, FREE_DAYS_VISIBLE
 from database import init_db, async_session
@@ -40,13 +40,12 @@ async def get_or_create_user(telegram_id: int, username: str, first_name: str) -
                 telegram_id=telegram_id,
                 username=username,
                 first_name=first_name,
-                subscription_expires=datetime.utcnow() + timedelta(days=3)  # 3 дня пробных
+                subscription_expires=datetime.utcnow() + timedelta(days=3)
             )
             session.add(user)
             await session.commit()
             logger.info(f"Новый пользователь: {first_name} ({telegram_id})")
 
-        # Обновляем активность
         user.last_active = datetime.utcnow()
         await session.commit()
 
@@ -77,7 +76,6 @@ def can_view_day(user: User, day: int) -> bool:
     if sub["active"]:
         return True
 
-    # Free видит только первые 7 дней
     return day <= FREE_DAYS_VISIBLE
 
 def can_use_ai(user: User) -> bool:
@@ -87,10 +85,8 @@ def can_use_ai(user: User) -> bool:
     if sub["active"] and sub["type"] in ["basic", "pro"]:
         return True
 
-    # Free: проверяем лимит вопросов
     now = datetime.utcnow()
 
-    # Сброс счётчика если новый день
     if user.ai_questions_reset.date() != now.date():
         user.ai_questions_today = 0
         user.ai_questions_reset = now
@@ -101,13 +97,18 @@ def can_use_ai(user: User) -> bool:
 # ГЛАВНОЕ МЕНЮ
 # ═══════════════════════════════════════════════════════════════
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Старт бота"""
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edit=False):
+    """Показать главное меню - исправленная версия"""
     user = update.effective_user
-    db_user = await get_or_create_user(user.id, user.username, user.first_name)
+
+    # Получаем или создаем пользователя
+    if update.callback_query:
+        db_user = await get_or_create_user(user.id, user.username, user.first_name)
+    else:
+        db_user = await get_or_create_user(user.id, user.username, user.first_name)
+
     sub = check_subscription(db_user)
 
-    # Приветственное сообщение
     text = f"""👋 Привет, {user.first_name}!
 
 🍽 Это твой персональный план питания на 30 дней!
@@ -131,18 +132,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❓ Помощь", callback_data='help')]
     ]
 
-    await update.message.reply_text(
-        text,
-        parse_mode='Markdown',
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    if edit and update.callback_query:
+        await update.callback_query.edit_message_text(
+            text,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        if update.message:
+            await update.message.reply_text(
+                text,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(
+                text,
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Старт бота - исправленный"""
+    await show_main_menu(update, context, edit=False)
 
 # ═══════════════════════════════════════════════════════════════
-# МЕНЮ ДНЕЙ (ИСПРАВЛЕНО - 30 ДНЕЙ!)
+# МЕНЮ ДНЕЙ
 # ═══════════════════════════════════════════════════════════════
 
 async def show_days_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать меню выбора дня - ВСЕ 30 ДНЕЙ"""
+    """Показать меню выбора дня"""
     query = update.callback_query
     await query.answer()
 
@@ -154,13 +173,11 @@ async def show_days_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = []
 
-    # 5 рядов по 6-7 кнопок = 30 дней
     for week in range(5):
         row = []
         for day_offset in range(7):
             day_num = week * 7 + day_offset + 1
             if day_num <= 30:
-                # Проверяем доступ
                 if can_view_day(user, day_num):
                     row.append(InlineKeyboardButton(
                         str(day_num), 
@@ -178,7 +195,9 @@ async def show_days_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sub = check_subscription(user)
     if not sub["active"]:
-        text = f"📅 Выбери день (1-{FREE_DAYS_VISIBLE} бесплатно):\n\n🔒 Дни {FREE_DAYS_VISIBLE+1}-30 доступны по подписке!"
+        text = f"📅 Выбери день (1-{FREE_DAYS_VISIBLE} бесплатно):
+
+🔒 Дни {FREE_DAYS_VISIBLE+1}-30 доступны по подписке!"
     else:
         text = "📅 Выбери день (1-30):"
 
@@ -210,17 +229,19 @@ async def show_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await query.edit_message_text(
-        f"📅 *ДЕНЬ {day}*\n\nВыбери приём пищи:",
+        f"📅 *ДЕНЬ {day}*
+
+Выбери приём пищи:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 # ═══════════════════════════════════════════════════════════════
-# ПОКАЗ БЛЮДА (ТВОЙ ФОРМАТ СОХРАНЁН!)
+# ПОКАЗ БЛЮДА
 # ═══════════════════════════════════════════════════════════════
 
 async def show_meal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать рецепт - ТВОЙ ФОРМАТ ПОЛНОСТЬЮ!"""
+    """Показать рецепт"""
     query = update.callback_query
     await query.answer()
 
@@ -228,9 +249,7 @@ async def show_meal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     day = int(parts[1])
     meal_type = parts[2]
 
-    # Получаем из БД
     async with async_session() as session:
-        # УДАЛЕН ЛОКАЛЬНЫЙ ИМПОРТ from sqlalchemy import select
         result = await session.execute(
             select(Recipe).where(
                 Recipe.day_number == day,
@@ -243,14 +262,20 @@ async def show_meal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Рецепт не найден")
             return
 
-    # Сохраняем контекст для AI
     context.user_data['current_recipe'] = recipe.title
 
-    # Формируем текст ТВОИМ ФОРМАТОМ!
-    text = f"{recipe.title}\n\n"
-    text += f"{recipe.shopping}\n\n"
-    text += f"{recipe.portion}\n\n"
-    text += f"{recipe.recipe}\n\n"
+    text = f"{recipe.title}
+
+"
+    text += f"{recipe.shopping}
+
+"
+    text += f"{recipe.portion}
+
+"
+    text += f"{recipe.recipe}
+
+"
     text += f"{recipe.calories_text}"
 
     keyboard = [
@@ -260,9 +285,7 @@ async def show_meal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Назад", callback_data=f'day_{day}')]
     ]
 
-    # Проверяем длину сообщения
     if len(text) > 4000:
-        # Делим на части если слишком длинное
         await query.edit_message_text(
             text[:4000] + "...",
             parse_mode='Markdown',
@@ -295,9 +318,6 @@ async def add_to_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     meal_type = parts[2]
 
     async with async_session() as session:
-        # УДАЛЕН ЛОКАЛЬНЫЙ ИМПОРТ from sqlalchemy import select
-
-        # Находим рецепт
         result = await session.execute(
             select(Recipe).where(
                 Recipe.day_number == day,
@@ -310,7 +330,6 @@ async def add_to_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Ошибка!")
             return
 
-        # Проверяем есть ли уже
         result = await session.execute(
             select(Favorite).where(
                 Favorite.user_id == user.id,
@@ -339,19 +358,22 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     async with async_session() as session:
-        # УДАЛЕН ЛОКАЛЬНЫЙ ИМПОРТ from sqlalchemy import select
-
         result = await session.execute(
             select(Favorite, Recipe).join(Recipe).where(Favorite.user_id == user.id)
         )
         favorites = result.all()
 
         if not favorites:
-            text = "⭐ *Избранное пусто*\n\nДобавляй блюда через кнопку \'⭐ В избранное\'"
+            text = "⭐ *Избранное пусто*
+
+Добавляй блюда через кнопку '⭐ В избранное'"
         else:
-            text = "⭐ *ТВОЁ ИЗБРАННОЕ:*\n\n"
+            text = "⭐ *ТВОЁ ИЗБРАННОЕ:*
+
+"
             for fav, recipe in favorites:
-                text += f"• День {recipe.day_number} — {recipe.title.split(':')[0]}\n"
+                text += f"• День {recipe.day_number} — {recipe.title.split(':')[0]}
+"
 
         keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data='back_main')]]
 
@@ -362,7 +384,7 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ═══════════════════════════════════════════════════════════════
-# AI ПОМОЩНИК (ЛОКАЛЬНЫЙ, БЕЗ API)
+# AI ПОМОЩНИК
 # ═══════════════════════════════════════════════════════════════
 
 AI_KNOWLEDGE = {
@@ -423,7 +445,6 @@ def get_ai_answer(question: str, recipe_context: str = "") -> str:
     """Локальный AI без API"""
     q = question.lower()
 
-    # Определяем тему
     if any(w in q for w in ['замен', 'вместо', 'нет', 'другой']):
         return AI_KNOWLEDGE["замена"]
     elif any(w in q for w in ['время', 'сколько', 'готовить', 'духовк']):
@@ -467,11 +488,13 @@ async def start_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update.effective_user.first_name
     )
 
-    # Проверяем лимит
     if not can_use_ai(user):
         await query.edit_message_text(
-            "❌ *Лимит вопросов исчерпан*\n\n"
-            "Free: 5 вопросов/день\n"
+            "❌ *Лимит вопросов исчерпан*
+
+"
+            "Free: 5 вопросов/день
+"
             "💎 Оформи подписку для безлимита!",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([[
@@ -486,11 +509,18 @@ async def start_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = f"про: {recipe}" if recipe else "общий вопрос"
 
     await query.edit_message_text(
-        f"🤖 *Задай вопрос ({header})*\n\n"
-        "Примеры:\n"
-        "• Чем заменить курицу?\n"
-        "• Сколько готовить в духовке?\n"
-        "• Как хранить готовое?\n\n"
+        f"🤖 *Задай вопрос ({header})*
+
+"
+        "Примеры:
+"
+        "• Чем заменить курицу?
+"
+        "• Сколько готовить в духовке?
+"
+        "• Как хранить готовое?
+
+"
         "Напиши сообщением:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([[
@@ -512,23 +542,24 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = update.message.text
     recipe = context.user_data.get('current_recipe', '')
 
-    # Увеличиваем счётчик для free
     if user.subscription_type == 'free':
         user.ai_questions_today += 1
         async with async_session() as session:
             await session.merge(user)
             await session.commit()
 
-    # Получаем ответ
     answer = get_ai_answer(question, recipe)
 
-    # Добавляем инфу о лимите
     if user.subscription_type == 'free':
         remaining = FREE_AI_QUESTIONS_PER_DAY - user.ai_questions_today
-        answer += f"\n\n📊 Осталось вопросов сегодня: {remaining}"
+        answer += f"
+
+📊 Осталось вопросов сегодня: {remaining}"
 
     await update.message.reply_text(
-        f"🤖 *Ответ:*\n\n{answer}",
+        f"🤖 *Ответ:*
+
+{answer}",
         parse_mode='Markdown'
     )
 
@@ -596,7 +627,7 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ═══════════════════════════════════════════════════════════════
-# ОБРАБОТЧИК КНОПОК (роутер)
+# ОБРАБОТЧИК КНОПОК
 # ═══════════════════════════════════════════════════════════════
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -604,9 +635,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
 
-    # Главное меню
+    # Главное меню - ИСПРАВЛЕНО
     if data == 'back_main':
-        await start(update, context)
+        await show_main_menu(update, context, edit=True)
         return
 
     # Меню дней
@@ -646,11 +677,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_subscription(update, context)
         return
 
-    # Заглушки (пока не реализовано)
+    # Заглушки
     if data in ['aeroguide', 'shopping', 'help', 'shopday_', 'total_', 'buy_basic', 'buy_pro']:
         await query.answer()
         await query.edit_message_text(
-            "🚧 *В разработке*\n\nЭта функция скоро будет доступна!",
+            "🚧 *В разработке*
+
+Эта функция скоро будет доступна!",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔙 Назад", callback_data='back_main')
@@ -663,30 +696,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════════════
 
 def main():
-    # Инициализация базы данных
     import asyncio
     asyncio.get_event_loop().run_until_complete(init_db())
 
-    # Загрузка рецептов (если есть)
     try:
         asyncio.get_event_loop().run_until_complete(load_recipes())
     except Exception as e:
         logger.warning(f"Не удалось загрузить рецепты: {e}")
 
-    # Создание приложения
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(
-    filters.TEXT & ~filters.COMMAND, 
-    handle_ai_message
-))
+        filters.TEXT & ~filters.COMMAND, 
+        handle_ai_message
+    ))
 
     logger.info("✅ Бот запущен!")
     application.run_polling()
 
 if __name__ == '__main__':
-
     main()
