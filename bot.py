@@ -101,12 +101,7 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, edi
     """Показать главное меню - исправленная версия"""
     user = update.effective_user
 
-    # Получаем или создаем пользователя
-    if update.callback_query:
-        db_user = await get_or_create_user(user.id, user.username, user.first_name)
-    else:
-        db_user = await get_or_create_user(user.id, user.username, user.first_name)
-
+    db_user = await get_or_create_user(user.id, user.username, user.first_name)
     sub = check_subscription(db_user)
 
     text = f"""👋 Привет, {user.first_name}!
@@ -195,9 +190,7 @@ async def show_days_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sub = check_subscription(user)
     if not sub["active"]:
-        text = f"📅 Выбери день (1-{FREE_DAYS_VISIBLE} бесплатно):
-
-🔒 Дни {FREE_DAYS_VISIBLE+1}-30 доступны по подписке!"
+        text = f"📅 Выбери день (1-{FREE_DAYS_VISIBLE} бесплатно):\n\n🔒 Дни {FREE_DAYS_VISIBLE+1}-30 доступны по подписке!"
     else:
         text = "📅 Выбери день (1-30):"
 
@@ -229,9 +222,7 @@ async def show_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     await query.edit_message_text(
-        f"📅 *ДЕНЬ {day}*
-
-Выбери приём пищи:",
+        f"📅 *ДЕНЬ {day}*\n\nВыбери приём пищи:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -264,18 +255,10 @@ async def show_meal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['current_recipe'] = recipe.title
 
-    text = f"{recipe.title}
-
-"
-    text += f"{recipe.shopping}
-
-"
-    text += f"{recipe.portion}
-
-"
-    text += f"{recipe.recipe}
-
-"
+    text = f"{recipe.title}\n\n"
+    text += f"{recipe.shopping}\n\n"
+    text += f"{recipe.portion}\n\n"
+    text += f"{recipe.recipe}\n\n"
     text += f"{recipe.calories_text}"
 
     keyboard = [
@@ -364,16 +347,11 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
         favorites = result.all()
 
         if not favorites:
-            text = "⭐ *Избранное пусто*
-
-Добавляй блюда через кнопку '⭐ В избранное'"
+            text = "⭐ *Избранное пусто*\n\nДобавляй блюда через кнопку '⭐ В избранное'"
         else:
-            text = "⭐ *ТВОЁ ИЗБРАННОЕ:*
-
-"
+            text = "⭐ *ТВОЁ ИЗБРАННОЕ:*\n\n"
             for fav, recipe in favorites:
-                text += f"• День {recipe.day_number} — {recipe.title.split(':')[0]}
-"
+                text += f"• День {recipe.day_number} — {recipe.title.split(':')[0]}\n"
 
         keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data='back_main')]]
 
@@ -490,11 +468,8 @@ async def start_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not can_use_ai(user):
         await query.edit_message_text(
-            "❌ *Лимит вопросов исчерпан*
-
-"
-            "Free: 5 вопросов/день
-"
+            "❌ *Лимит вопросов исчерпан*\n\n"
+            "Free: 5 вопросов/день\n"
             "💎 Оформи подписку для безлимита!",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([[
@@ -509,18 +484,11 @@ async def start_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = f"про: {recipe}" if recipe else "общий вопрос"
 
     await query.edit_message_text(
-        f"🤖 *Задай вопрос ({header})*
-
-"
-        "Примеры:
-"
-        "• Чем заменить курицу?
-"
-        "• Сколько готовить в духовке?
-"
-        "• Как хранить готовое?
-
-"
+        f"🤖 *Задай вопрос ({header})*\n\n"
+        "Примеры:\n"
+        "• Чем заменить курицу?\n"
+        "• Сколько готовить в духовке?\n"
+        "• Как хранить готовое?\n\n"
         "Напиши сообщением:",
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([[
@@ -552,14 +520,10 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user.subscription_type == 'free':
         remaining = FREE_AI_QUESTIONS_PER_DAY - user.ai_questions_today
-        answer += f"
-
-📊 Осталось вопросов сегодня: {remaining}"
+        answer += f"\n\n📊 Осталось вопросов сегодня: {remaining}"
 
     await update.message.reply_text(
-        f"🤖 *Ответ:*
-
-{answer}",
+        f"🤖 *Ответ:*\n\n{answer}",
         parse_mode='Markdown'
     )
 
@@ -635,7 +599,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
 
-    # Главное меню - ИСПРАВЛЕНО
+    # Главное меню
     if data == 'back_main':
         await show_main_menu(update, context, edit=True)
         return
@@ -681,9 +645,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data in ['aeroguide', 'shopping', 'help', 'shopday_', 'total_', 'buy_basic', 'buy_pro']:
         await query.answer()
         await query.edit_message_text(
-            "🚧 *В разработке*
-
-Эта функция скоро будет доступна!",
+            "🚧 *В разработке*\n\nЭта функция скоро будет доступна!",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🔙 Назад", callback_data='back_main')
