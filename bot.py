@@ -667,8 +667,8 @@ async def init_app():
         logger.warning(f"Не удалось загрузить рецепты: {e}")
 
 def main():
-    # Синхронная инициализация (без greenlet)
-    init_app_sync()
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(init_app())
     
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
@@ -687,9 +687,7 @@ def main():
         # WEBHOOK режим (на Render)
         WEBHOOK_URL = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
         logger.info(f"🚀 Запуск Webhook на {WEBHOOK_URL}")
-        logger.info(f"📡 Порт: {PORT}")
         
-        # ВАЖНО: Используем правильный порт для Render
         application.run_webhook(
             listen='0.0.0.0',
             port=PORT,
@@ -703,4 +701,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
