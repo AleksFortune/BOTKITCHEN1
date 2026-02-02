@@ -6,6 +6,7 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, 
     MessageHandler, filters, ContextTypes, ConversationHandler
 )
+from sqlalchemy import select  # <-- ДОБАВЛЕН ЭТОТ ИМПОРТ
 
 from config import TELEGRAM_TOKEN, ADMIN_ID, SUBSCRIPTION_PLANS, FREE_AI_QUESTIONS_PER_DAY, FREE_DAYS_VISIBLE
 from database import init_db, async_session
@@ -33,7 +34,7 @@ async def get_or_create_user(telegram_id: int, username: str, first_name: str) -
             select(User).where(User.telegram_id == telegram_id)
         )
         user = result.scalar_one_or_none()
-        
+
         if not user:
             user = User(
                 telegram_id=telegram_id,
@@ -44,17 +45,17 @@ async def get_or_create_user(telegram_id: int, username: str, first_name: str) -
             session.add(user)
             await session.commit()
             logger.info(f"Новый пользователь: {first_name} ({telegram_id})")
-        
+
         # Обновляем активность
         user.last_active = datetime.utcnow()
         await session.commit()
-        
+
         return user
 
 def check_subscription(user: User) -> dict:
     """Проверить статус подписки"""
     now = datetime.utcnow()
-    
+
     if user.subscription_expires and user.subscription_expires > now:
         return {
             "active": True,
@@ -72,28 +73,28 @@ def check_subscription(user: User) -> dict:
 def can_view_day(user: User, day: int) -> bool:
     """Может ли пользователь видеть этот день"""
     sub = check_subscription(user)
-    
+
     if sub["active"]:
         return True
-    
+
     # Free видит только первые 7 дней
     return day <= FREE_DAYS_VISIBLE
 
 def can_use_ai(user: User) -> bool:
     """Может ли пользователь использовать AI сейчас"""
     sub = check_subscription(user)
-    
+
     if sub["active"] and sub["type"] in ["basic", "pro"]:
         return True
-    
+
     # Free: проверяем лимит вопросов
     now = datetime.utcnow()
-    
+
     # Сброс счётчика если новый день
     if user.ai_questions_reset.date() != now.date():
         user.ai_questions_today = 0
         user.ai_questions_reset = now
-    
+
     return user.ai_questions_today < FREE_AI_QUESTIONS_PER_DAY
 
 # ═══════════════════════════════════════════════════════════════
@@ -105,7 +106,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db_user = await get_or_create_user(user.id, user.username, user.first_name)
     sub = check_subscription(db_user)
-    
+
     # Приветственное сообщение
     text = f"""👋 Привет, {user.first_name}!
 
@@ -119,7 +120,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 🎁 У тебя {sub['days_left']} дней пробного доступа!
 """
-    
+
     keyboard = [
         [InlineKeyboardButton("📅 План на день", callback_data='menu_day'),
          InlineKeyboardButton("🔥 Аэрогриль", callback_data='aeroguide')],
@@ -129,7 +130,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("💎 Подписка", callback_data='subscription')],
         [InlineKeyboardButton("❓ Помощь", callback_data='help')]
     ]
-    
+
     await update.message.reply_text(
         text,
         parse_mode='Markdown',
@@ -144,15 +145,15 @@ async def show_days_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать меню выбора дня - ВСЕ 30 ДНЕЙ"""
     query = update.callback_query
     await query.answer()
-    
+
     user = await get_or_create_user(
         update.effective_user.id,
         update.effective_user.username,
         update.effective_user.first_name
     )
-    
+
     keyboard = []
-    
+
     # 5 рядов по 6-7 кнопок = 30 дней
     for week in range(5):
         row = []
@@ -172,15 +173,15 @@ async def show_days_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ))
         if row:
             keyboard.append(row)
-    
+
     keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data='back_main')])
-    
+
     sub = check_subscription(user)
     if not sub["active"]:
         text = f"📅 Выбери день (1-{FREE_DAYS_VISIBLE} бесплатно):\n\n🔒 Дни {FREE_DAYS_VISIBLE+1}-30 доступны по подписке!"
     else:
         text = "📅 Выбери день (1-30):"
-    
+
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -194,10 +195,10 @@ async def show_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать конкретный день"""
     query = update.callback_query
     await query.answer()
-    
+
     day = int(query.data.split('_')[1])
     context.user_data['current_day'] = day
-    
+
     keyboard = [
         [InlineKeyboardButton("🌅 Завтрак", callback_data=f'meal_{day}_breakfast'),
          InlineKeyboardButton("🍽 Обед", callback_data=f'meal_{day}_lunch')],
@@ -207,7 +208,7 @@ async def show_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 Итого день", callback_data=f'total_{day}')],
         [InlineKeyboardButton("🔙 К дням", callback_data='menu_day')]
     ]
-    
+
     await query.edit_message_text(
         f"📅 *ДЕНЬ {day}*\n\nВыбери приём пищи:",
         parse_mode='Markdown',
@@ -222,14 +223,14 @@ async def show_meal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать рецепт - ТВОЙ ФОРМАТ ПОЛНОСТЬЮ!"""
     query = update.callback_query
     await query.answer()
-    
+
     parts = query.data.split('_')
     day = int(parts[1])
     meal_type = parts[2]
-    
+
     # Получаем из БД
     async with async_session() as session:
-        from sqlalchemy import select
+        # УДАЛЕН ЛОКАЛЬНЫЙ ИМПОРТ from sqlalchemy import select
         result = await session.execute(
             select(Recipe).where(
                 Recipe.day_number == day,
@@ -237,28 +238,28 @@ async def show_meal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
         recipe = result.scalar_one_or_none()
-        
+
         if not recipe:
             await query.edit_message_text("❌ Рецепт не найден")
             return
-    
+
     # Сохраняем контекст для AI
     context.user_data['current_recipe'] = recipe.title
-    
+
     # Формируем текст ТВОИМ ФОРМАТОМ!
     text = f"{recipe.title}\n\n"
     text += f"{recipe.shopping}\n\n"
     text += f"{recipe.portion}\n\n"
     text += f"{recipe.recipe}\n\n"
     text += f"{recipe.calories_text}"
-    
+
     keyboard = [
         [InlineKeyboardButton("⭐ В избранное", callback_data=f'fav_{day}_{meal_type}')],
         [InlineKeyboardButton("✅ Я приготовил!", callback_data=f'cooked_{day}_{meal_type}')],
         [InlineKeyboardButton("🤖 Вопрос про блюдо", callback_data='ask_ai_recipe')],
         [InlineKeyboardButton("🔙 Назад", callback_data=f'day_{day}')]
     ]
-    
+
     # Проверяем длину сообщения
     if len(text) > 4000:
         # Делим на части если слишком длинное
@@ -282,20 +283,20 @@ async def add_to_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Добавить в избранное"""
     query = update.callback_query
     await query.answer()
-    
+
     user = await get_or_create_user(
         update.effective_user.id,
         update.effective_user.username,
         update.effective_user.first_name
     )
-    
+
     parts = query.data.split('_')
     day = int(parts[1])
     meal_type = parts[2]
-    
+
     async with async_session() as session:
-        from sqlalchemy import select
-        
+        # УДАЛЕН ЛОКАЛЬНЫЙ ИМПОРТ from sqlalchemy import select
+
         # Находим рецепт
         result = await session.execute(
             select(Recipe).where(
@@ -304,11 +305,11 @@ async def add_to_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
         recipe = result.scalar_one_or_none()
-        
+
         if not recipe:
             await query.answer("❌ Ошибка!")
             return
-        
+
         # Проверяем есть ли уже
         result = await session.execute(
             select(Favorite).where(
@@ -317,7 +318,7 @@ async def add_to_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         )
         existing = result.scalar_one_or_none()
-        
+
         if existing:
             await query.answer("⭐ Уже в избранном!")
         else:
@@ -330,30 +331,30 @@ async def show_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать избранное"""
     query = update.callback_query
     await query.answer()
-    
+
     user = await get_or_create_user(
         update.effective_user.id,
         update.effective_user.username,
         update.effective_user.first_name
     )
-    
+
     async with async_session() as session:
-        from sqlalchemy import select
-        
+        # УДАЛЕН ЛОКАЛЬНЫЙ ИМПОРТ from sqlalchemy import select
+
         result = await session.execute(
             select(Favorite, Recipe).join(Recipe).where(Favorite.user_id == user.id)
         )
         favorites = result.all()
-        
+
         if not favorites:
-            text = "⭐ *Избранное пусто*\n\nДобавляй блюда через кнопку '⭐ В избранное'"
+            text = "⭐ *Избранное пусто*\n\nДобавляй блюда через кнопку \'⭐ В избранное\'"
         else:
             text = "⭐ *ТВОЁ ИЗБРАННОЕ:*\n\n"
             for fav, recipe in favorites:
                 text += f"• День {recipe.day_number} — {recipe.title.split(':')[0]}\n"
-        
+
         keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data='back_main')]]
-        
+
         await query.edit_message_text(
             text,
             parse_mode='Markdown',
@@ -421,7 +422,7 @@ AI_KNOWLEDGE = {
 def get_ai_answer(question: str, recipe_context: str = "") -> str:
     """Локальный AI без API"""
     q = question.lower()
-    
+
     # Определяем тему
     if any(w in q for w in ['замен', 'вместо', 'нет', 'другой']):
         return AI_KNOWLEDGE["замена"]
@@ -459,13 +460,13 @@ async def start_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начать диалог с AI"""
     query = update.callback_query
     await query.answer()
-    
+
     user = await get_or_create_user(
         update.effective_user.id,
         update.effective_user.username,
         update.effective_user.first_name
     )
-    
+
     # Проверяем лимит
     if not can_use_ai(user):
         await query.edit_message_text(
@@ -478,12 +479,12 @@ async def start_ai_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]])
         )
         return
-    
+
     context.user_data['awaiting_ai'] = True
     recipe = context.user_data.get('current_recipe', '')
-    
+
     header = f"про: {recipe}" if recipe else "общий вопрос"
-    
+
     await query.edit_message_text(
         f"🤖 *Задай вопрос ({header})*\n\n"
         "Примеры:\n"
@@ -501,41 +502,41 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка вопроса к AI"""
     if not context.user_data.get('awaiting_ai'):
         return
-    
+
     user = await get_or_create_user(
         update.effective_user.id,
         update.effective_user.username,
         update.effective_user.first_name
     )
-    
+
     question = update.message.text
     recipe = context.user_data.get('current_recipe', '')
-    
+
     # Увеличиваем счётчик для free
     if user.subscription_type == 'free':
         user.ai_questions_today += 1
         async with async_session() as session:
             await session.merge(user)
             await session.commit()
-    
+
     # Получаем ответ
     answer = get_ai_answer(question, recipe)
-    
+
     # Добавляем инфу о лимите
     if user.subscription_type == 'free':
         remaining = FREE_AI_QUESTIONS_PER_DAY - user.ai_questions_today
         answer += f"\n\n📊 Осталось вопросов сегодня: {remaining}"
-    
+
     await update.message.reply_text(
         f"🤖 *Ответ:*\n\n{answer}",
         parse_mode='Markdown'
     )
-    
+
     context.user_data['awaiting_ai'] = False
-    
+
     keyboard = [[InlineKeyboardButton("📋 Меню", callback_data='back_main')]]
     await update.message.reply_text(
-        "Ещё вопрос? Нажми '🤖 AI Помощник' в меню!",
+        "Ещё вопрос? Нажми 🤖 AI Помощник в меню!",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -547,15 +548,15 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать планы подписок"""
     query = update.callback_query
     await query.answer()
-    
+
     user = await get_or_create_user(
         update.effective_user.id,
         update.effective_user.username,
         update.effective_user.first_name
     )
-    
+
     sub = check_subscription(user)
-    
+
     text = f"""💎 *ПОДПИСКИ*
 
 Твой статус: {"✅ Активна" if sub['active'] else "❌ Неактивна"}
@@ -581,13 +582,13 @@ async def show_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Приоритетная поддержка
 • PDF-экспорт
 """
-    
+
     keyboard = [
         [InlineKeyboardButton("💎 Basic - 299₽", callback_data='buy_basic'),
          InlineKeyboardButton("👑 Pro - 599₽", callback_data='buy_pro')],
         [InlineKeyboardButton("🔙 Назад", callback_data='back_main')]
     ]
-    
+
     await query.edit_message_text(
         text,
         parse_mode='Markdown',
@@ -602,49 +603,49 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Главный обработчик всех кнопок"""
     query = update.callback_query
     data = query.data
-    
+
     # Главное меню
     if data == 'back_main':
         await start(update, context)
         return
-    
+
     # Меню дней
     if data == 'menu_day':
         await show_days_menu(update, context)
         return
-    
+
     if data.startswith('day_'):
         await show_day(update, context)
         return
-    
+
     if data.startswith('locked_'):
         await query.answer("🔒 Доступно по подписке!", show_alert=True)
         return
-    
+
     # Блюда
     if data.startswith('meal_'):
         await show_meal(update, context)
         return
-    
+
     # Избранное
     if data.startswith('fav_'):
         await add_to_favorites(update, context)
         return
-    
+
     if data == 'favorites':
         await show_favorites(update, context)
         return
-    
+
     # AI
     if data in ['ask_ai', 'ask_ai_recipe']:
         await start_ai_chat(update, context)
         return
-    
+
     # Подписка
     if data == 'subscription':
         await show_subscription(update, context)
         return
-    
+
     # Заглушки (пока не реализовано)
     if data in ['aeroguide', 'shopping', 'help', 'shopday_', 'total_', 'buy_basic', 'buy_pro']:
         await query.answer()
@@ -665,16 +666,16 @@ def main():
     # Инициализация базы данных
     import asyncio
     asyncio.get_event_loop().run_until_complete(init_db())
-    
+
     # Загрузка рецептов (если есть)
     try:
         asyncio.get_event_loop().run_until_complete(load_recipes())
     except Exception as e:
         logger.warning(f"Не удалось загрузить рецепты: {e}")
-    
+
     # Создание приложения
     application = Application.builder().token(TELEGRAM_TOKEN).build()
-    
+
     # Обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
@@ -682,7 +683,7 @@ def main():
     filters.TEXT & ~filters.COMMAND, 
     handle_ai_message
 ))
-    
+
     logger.info("✅ Бот запущен!")
     application.run_polling()
 
