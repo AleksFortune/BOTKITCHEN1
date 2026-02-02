@@ -679,12 +679,13 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.Create(lambda _: True), 
-        handle_ai_message
-    ))
+    filters.TEXT & ~filters.COMMAND, 
+    handle_ai_message
+))
     
     logger.info("✅ Бот запущен!")
     application.run_polling()
 
 if __name__ == '__main__':
+
     main()
