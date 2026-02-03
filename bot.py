@@ -667,15 +667,9 @@ async def init_app():
         logger.warning(f"Не удалось загрузить рецепты: {e}")
 
 def main():
-    # Инициализация базы данных (исправлено для Python 3.11+)
+    # Инициализация базы данных
     import asyncio
-    try:
-        asyncio.run(init_app())
-    except RuntimeError:
-        # Если event loop уже запущен
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(init_app())
+    asyncio.run(init_app())
     
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
@@ -691,21 +685,33 @@ def main():
     RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
     
     if RENDER_EXTERNAL_HOSTNAME:
-        # WEBHOOK режим (на Render)
-        WEBHOOK_URL = f"https://{RENDER_EXTERNAL_HOSTNAME}/webhook"
-        logger.info(f"🚀 Запуск Webhook на {WEBHOOK_URL}")
+        # POLLING + фейковый сервер для Render
+        from aiohttp import web
+        import threading
         
-        application.run_webhook(
-            listen='0.0.0.0',
-            port=PORT,
-            webhook_url=WEBHOOK_URL,
-            secret_token='my_secret_token_123'
-        )
+        async def fake_server():
+            app = web.Application()
+            app.router.add_get('/', lambda r: web.Response(text="Bot is running!"))
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', PORT)
+            await site.start()
+            print(f"✅ Keep-alive server on port {PORT}")
+            while True:
+                await asyncio.sleep(3600)
+        
+        def run_server():
+            asyncio.run(fake_server())
+        
+        # Запускаем фейковый сервер в отдельном потоке
+        threading.Thread(target=run_server, daemon=True).start()
+        
+        logger.info("🔄 Запуск Polling для Render")
+        application.run_polling()
     else:
-        # POLLING режим (локально)
+        # POLLING локально
         logger.info("🔄 Запуск Polling (локально)")
         application.run_polling()
 
 if __name__ == '__main__':
     main()
-
