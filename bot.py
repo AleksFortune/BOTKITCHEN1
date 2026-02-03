@@ -667,8 +667,15 @@ async def init_app():
         logger.warning(f"Не удалось загрузить рецепты: {e}")
 
 def main():
+    # Инициализация базы данных (исправлено для Python 3.11+)
     import asyncio
-    asyncio.get_event_loop().run_until_complete(init_app())
+    try:
+        asyncio.run(init_app())
+    except RuntimeError:
+        # Если event loop уже запущен
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(init_app())
     
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
@@ -701,3 +708,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
