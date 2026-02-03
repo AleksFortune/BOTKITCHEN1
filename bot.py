@@ -667,9 +667,17 @@ async def init_app():
         logger.warning(f"Не удалось загрузить рецепты: {e}")
 
 def main():
-    # Инициализация базы данных
+    # Получаем переменные от Render
+    PORT = int(os.environ.get('PORT', '10000'))
+    RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+    
+    # Создаем event loop вручную
     import asyncio
-    asyncio.run(init_app())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Инициализация базы данных
+    loop.run_until_complete(init_app())
     
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
@@ -679,10 +687,6 @@ def main():
         filters.TEXT & ~filters.COMMAND, 
         handle_ai_message
     ))
-    
-    # Получаем переменные от Render
-    PORT = int(os.environ.get('PORT', '10000'))
-    RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
     
     if RENDER_EXTERNAL_HOSTNAME:
         # POLLING + фейковый сервер для Render
