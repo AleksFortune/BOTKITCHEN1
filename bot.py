@@ -667,18 +667,7 @@ async def init_app():
         logger.warning(f"Не удалось загрузить рецепты: {e}")
 
 def main():
-    # Получаем переменные от Render
-    PORT = int(os.environ.get('PORT', '10000'))
-    RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-    
-    # Создаем event loop вручную
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Инициализация базы данных
-    loop.run_until_complete(init_app())
-    
+    # Создаем приложение бота
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     application.add_handler(CommandHandler("start", start))
@@ -688,10 +677,13 @@ def main():
         handle_ai_message
     ))
     
+    # Получаем переменные от Render
+    PORT = int(os.environ.get('PORT', '10000'))
+    RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+    
     if RENDER_EXTERNAL_HOSTNAME:
         # POLLING + фейковый сервер для Render
         from aiohttp import web
-        import threading
         
         async def fake_server():
             app = web.Application()
@@ -700,20 +692,30 @@ def main():
             await runner.setup()
             site = web.TCPSite(runner, '0.0.0.0', PORT)
             await site.start()
-            print(f"✅ Keep-alive server on port {PORT}")
+            logger.info(f"✅ Keep-alive server on port {PORT}")
             while True:
                 await asyncio.sleep(3600)
         
-        def run_server():
-            asyncio.run(fake_server())
+        async def run_bot():
+            # Инициализация базы данных
+            await init_app()
+            # Запускаем фейковый сервер как задачу
+            asyncio.create_task(fake_server())
+            # Запускаем бота
+            logger.info("🔄 Запуск Polling для Render")
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling()
+            # Держим процесс живым
+            while True:
+                await asyncio.sleep(3600)
         
-        # Запускаем фейковый сервер в отдельном потоке
-        threading.Thread(target=run_server, daemon=True).start()
-        
-        logger.info("🔄 Запуск Polling для Render")
-        application.run_polling()
+        # Запускаем всё в одном event loop
+        asyncio.run(run_bot())
     else:
-        # POLLING локально
+        # Локально — просто polling
+        import asyncio
+        asyncio.run(init_app())
         logger.info("🔄 Запуск Polling (локально)")
         application.run_polling()
 
