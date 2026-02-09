@@ -670,21 +670,17 @@ async def init_app():
 def main():
     global application
     
-    # Создаем приложение
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Хендлеры
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message))
     
-    # Получаем настройки
     PORT = int(os.environ.get('PORT', '10000'))
     RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-    WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
+    WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '').rstrip('/')  # Убираем слеш в конце
     
     if RENDER_EXTERNAL_HOSTNAME and WEBHOOK_URL:
-        # === WEBHOOK MODE (продакшен) ===
         logger.info("🚀 Запуск в режиме WEBHOOK")
         
         async def init_and_start():
@@ -708,15 +704,26 @@ def main():
         async def health_handler(request):
             return web.Response(text="Bot is running!")
         
+        # Создаём приложение
         app = web.Application()
         app.router.add_get('/', health_handler)
         app.router.add_post('/webhook', webhook_handler)
         
-        asyncio.run(init_and_start())
-        web.run_app(app, host='0.0.0.0', port=PORT)
+        # Запускаем всё вместе
+        async def run():
+            await init_and_start()
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', PORT)
+            await site.start()
+            logger.info(f"✅ Сервер запущен на порту {PORT}")
+            # Держим живым
+            while True:
+                await asyncio.sleep(3600)
+        
+        asyncio.run(run())
         
     else:
-        # === POLLING MODE (локально) ===
         logger.info("🔄 Запуск в режиме POLLING (локально)")
         
         async def run_polling():
