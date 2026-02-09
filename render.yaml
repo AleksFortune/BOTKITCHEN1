@@ -7,8 +7,8 @@ services:
     startCommand: python bot.py
     envVars:
       - key: TELEGRAM_TOKEN
-        value: 7949828089:AAEX7S0RfiSOydn6Y5C8GIzGfvn9A23oCCs
+        sync: false
       - key: DATABASE_URL
-        value: postgresql://mealbot_db_34ao_user:JZnR6tNnNx38DEbinpPhgajFBz3U2gBy@dpg-d60b9jkr85hc73etfc30-a/mealbot_db_34ao
+        sync: false
       - key: ADMIN_ID
-        value: 123456789
+        sync: false
