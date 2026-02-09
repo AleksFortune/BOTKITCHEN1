@@ -706,7 +706,7 @@ def main():
             logger.info("🔄 Запуск Polling для Render")
             await application.initialize()
             await application.start()
-            await application.updater.start_polling()
+            await application.updater.start_polling(timeout=30)
             # Держим процесс живым
             while True:
                 await asyncio.sleep(3600)
@@ -721,4 +721,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
