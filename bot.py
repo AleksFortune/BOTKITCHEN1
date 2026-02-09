@@ -668,58 +668,65 @@ async def init_app():
         logger.warning(f"Не удалось загрузить рецепты: {e}")
 
 def main():
-    # Создаем приложение бота
+    global application
+    
+    # Создаем приложение
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
+    # Хендлеры
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, 
-        handle_ai_message
-    ))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message))
     
-    # Получаем переменные от Render
+    # Получаем настройки
     PORT = int(os.environ.get('PORT', '10000'))
     RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+    WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
     
-    if RENDER_EXTERNAL_HOSTNAME:
-        # POLLING + фейковый сервер для Render
-        from aiohttp import web
+    if RENDER_EXTERNAL_HOSTNAME and WEBHOOK_URL:
+        # === WEBHOOK MODE (продакшен) ===
+        logger.info("🚀 Запуск в режиме WEBHOOK")
         
-        async def fake_server():
-            app = web.Application()
-            app.router.add_get('/', lambda r: web.Response(text="Bot is running!"))
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', PORT)
-            await site.start()
-            logger.info(f"✅ Keep-alive server on port {PORT}")
-            while True:
-                await asyncio.sleep(3600)
-        
-        async def run_bot():
-            # Инициализация базы данных
+        async def init_and_start():
             await init_app()
-            # Запускаем фейковый сервер как задачу
-            asyncio.create_task(fake_server())
-            # Запускаем бота
-            logger.info("🔄 Запуск Polling для Render")
             await application.initialize()
             await application.start()
-            await application.updater.start_polling(timeout=30)
-            # Держим процесс живым
-            while True:
-                await asyncio.sleep(3600)
+            await application.bot.set_webhook(
+                url=f"{WEBHOOK_URL}/webhook",
+                allowed_updates=Update.ALL_TYPES
+            )
+            logger.info(f"✅ Webhook установлен: {WEBHOOK_URL}/webhook")
         
-        # Запускаем всё в одном event loop
-        asyncio.run(run_bot())
+        from aiohttp import web
+        
+        async def webhook_handler(request):
+            data = await request.json()
+            update = Update.de_json(data, application.bot)
+            await application.process_update(update)
+            return web.Response(text="OK")
+        
+        async def health_handler(request):
+            return web.Response(text="Bot is running!")
+        
+        app = web.Application()
+        app.router.add_get('/', health_handler)
+        app.router.add_post('/webhook', webhook_handler)
+        
+        asyncio.run(init_and_start())
+        web.run_app(app, host='0.0.0.0', port=PORT)
+        
     else:
-        # Локально — просто polling
-        asyncio.run(init_app())
-        logger.info("🔄 Запуск Polling (локально)")
-        application.run_polling()
+        # === POLLING MODE (локально) ===
+        logger.info("🔄 Запуск в режиме POLLING (локально)")
+        
+        async def run_polling():
+            await init_app()
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling(drop_pending_updates=True)
+            await asyncio.Event().wait()
+        
+        asyncio.run(run_polling())
 
 if __name__ == '__main__':
     main()
-
-
