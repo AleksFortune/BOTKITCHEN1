@@ -1,6 +1,7 @@
 import logging
 import re
 import os
+import asyncio  # ← ДОБАВИЛИ ЭТО
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -714,10 +715,10 @@ def main():
         asyncio.run(run_bot())
     else:
         # Локально — просто polling
-        import asyncio
         asyncio.run(init_app())
         logger.info("🔄 Запуск Polling (локально)")
         application.run_polling()
 
 if __name__ == '__main__':
     main()
+
