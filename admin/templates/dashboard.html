@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - MealBot Admin{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>🍽️ <span>MealBot</span></h2>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/admin" class="nav-item active">
+                <i class="fas fa-home nav-icon"></i>
+                Dashboard
+            </a>
+            <a href="/admin/users" class="nav-item">
+                <i class="fas fa-users nav-icon"></i>
+                Пользователи
+            </a>
+            <a href="/admin/recipes" class="nav-item">
+                <i class="fas fa-utensils nav-icon"></i>
+                Рецепты
+            </a>
+            <div style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                <a href="/admin/logout" class="nav-item" style="color: var(--danger);">
+                    <i class="fas fa-sign-out-alt nav-icon"></i>
+                    Выход
+                </a>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="top-bar">
+            <h1>Dashboard</h1>
+            <div class="user-menu">
+                <span style="color: var(--secondary);">{{ admin }}</span>
+                <div style="width: 32px; height: 32px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">
+                    {{ admin[0].upper() }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Message -->
+        {% if request.query_params.success %}
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            Операция выполнена успешно!
+        </div>
+        {% endif %}
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card success">
+                <div class="stat-label">Всего пользователей</div>
+                <div class="stat-value">{{ user_stats.total }}</div>
+                <div class="stat-change">+{{ user_stats.last_7d }} за 7 дней</div>
+            </div>
+
+            <div class="stat-card info">
+                <div class="stat-label">Активные сегодня</div>
+                <div class="stat-value">{{ user_stats.active_today }}</div>
+                <div class="stat-change">{{ (user_stats.active_today / user_stats.total * 100)|round(1) if user_stats.total > 0 else 0 }}% от общего числа</div>
+            </div>
+
+            <div class="stat-card warning">
+                <div class="stat-label">С подпиской</div>
+                <div class="stat-value">{{ user_stats.with_active_subscription }}</div>
+                <div class="stat-change">{{ user_stats.conversion_rate }}% конверсия</div>
+            </div>
+
+            <div class="stat-card danger">
+                <div class="stat-label">Новые за 24ч</div>
+                <div class="stat-value">{{ user_stats.last_24h }}</div>
+                <div class="stat-change">присоединилось сегодня</div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">📊 Распределение подписок</h3>
+                </div>
+                <div style="display: flex; gap: 2rem; align-items: center;">
+                    <div style="flex: 1;">
+                        {% for type, count in user_stats.subscription_types.items() %}
+                        <div style="margin-bottom: 1rem;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                                <span style="text-transform: capitalize; font-weight: 500;">{{ type }}</span>
+                                <span style="color: var(--secondary);">{{ count }}</span>
+                            </div>
+                            <div style="height: 8px; background: var(--gray-200); border-radius: 4px; overflow: hidden;">
+                                <div style="height: 100%; width: {{ (count / user_stats.total * 100) if user_stats.total > 0 else 0 }}%; background: 
+                                    {% if type == 'free' %}var(--secondary)
+                                    {% elif type == 'basic' %}var(--warning)
+                                    {% else %}var(--success)
+                                    {% endif %}; border-radius: 4px;">
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">🍽️ Рецепты</h3>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                    <div style="text-align: center; padding: 1rem; background: var(--gray-100); border-radius: 0.5rem;">
+                        <div style="font-size: 2rem; font-weight: 700; color: var(--primary);">{{ recipe_stats.total }}</div>
+                        <div style="font-size: 0.875rem; color: var(--secondary);">Всего рецептов</div>
+                    </div>
+                    <div style="text-align: center; padding: 1rem; background: var(--gray-100); border-radius: 0.5rem;">
+                        <div style="font-size: 2rem; font-weight: 700; color: var(--success);">{{ recipe_stats.premium }}</div>
+                        <div style="font-size: 0.875rem; color: var(--secondary);">Премиум</div>
+                    </div>
+                    {% for meal, count in recipe_stats.by_meal_type.items() %}
+                    <div style="text-align: center; padding: 1rem; background: var(--gray-100); border-radius: 0.5rem;">
+                        <div style="font-size: 1.5rem; font-weight: 700;">{{ count }}</div>
+                        <div style="font-size: 0.75rem; color: var(--secondary); text-transform: capitalize;">{{ meal }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Engagement Stats -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🔥 Вовлечённость</h3>
+            </div>
+            <div class="grid-3">
+                <div style="text-align: center;">
+                    <div style="font-size: 2.5rem; color: var(--danger);"><i class="fas fa-heart"></i></div>
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ engagement.total_favorites }}</div>
+                    <div style="color: var(--secondary);">Добавлено в избранное</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 2.5rem; color: var(--warning);"><i class="fas fa-fire"></i></div>
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ engagement.total_cooked }}</div>
+                    <div style="color: var(--secondary);">Приготовлено блюд</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 2.5rem; color: var(--success);"><i class="fas fa-star"></i></div>
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ engagement.average_rating }}</div>
+                    <div style="color: var(--secondary);">Средний рейтинг</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Retention Table -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📈 Удержание (последние 14 дней)</h3>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Регистраций</th>
+                            <th>Активны сегодня</th>
+                            <th>Retention</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cohort in retention.cohorts %}
+                        <tr>
+                            <td>{{ cohort.date }}</td>
+                            <td>{{ cohort.registered }}</td>
+                            <td>{{ cohort.active_today }}</td>
+                            <td>
+                                <span class="badge {% if cohort.retention >= 50 %}badge-success{% elif cohort.retention >= 20 %}badge-warning{% else %}badge-danger{% endif %}">
+                                    {{ cohort.retention }}%
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">⚡ Быстрые действия</h3>
+            </div>
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                <a href="/admin/recipes/new" class="btn btn-success">
+                    <i class="fas fa-plus"></i>
+                    Добавить рецепт
+                </a>
+                <a href="/admin/users" class="btn btn-primary">
+                    <i class="fas fa-search"></i>
+                    Найти пользователя
+                </a>
+                <button onclick="alert('Экспорт в разработке')" class="btn btn-secondary">
+                    <i class="fas fa-download"></i>
+                    Экспорт данных
+                </button>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

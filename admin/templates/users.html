@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Пользователи - MealBot Admin{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>🍽️ <span>MealBot</span></h2>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/admin" class="nav-item">
+                <i class="fas fa-home nav-icon"></i>
+                Dashboard
+            </a>
+            <a href="/admin/users" class="nav-item active">
+                <i class="fas fa-users nav-icon"></i>
+                Пользователи
+            </a>
+            <a href="/admin/recipes" class="nav-item">
+                <i class="fas fa-utensils nav-icon"></i>
+                Рецепты
+            </a>
+            <div style="margin-top: auto; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                <a href="/admin/logout" class="nav-item" style="color: var(--danger);">
+                    <i class="fas fa-sign-out-alt nav-icon"></i>
+                    Выход
+                </a>
+            </div>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        <div class="top-bar">
+            <h1>Пользователи</h1>
+            <div class="user-menu">
+                <span style="color: var(--secondary);">{{ admin }}</span>
+                <div style="width: 32px; height: 32px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">
+                    {{ admin[0].upper() }}
+                </div>
+            </div>
+        </div>
+
+        {% if request.query_params.success == 'user_deleted' %}
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            Пользователь удалён
+        </div>
+        {% endif %}
+
+        <!-- Stats -->
+        <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="stat-card">
+                <div class="stat-label">Всего</div>
+                <div class="stat-value">{{ stats.total }}</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">Free</div>
+                <div class="stat-value">{{ stats.subscription_types.free }}</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-label">Basic</div>
+                <div class="stat-value">{{ stats.subscription_types.basic }}</div>
+            </div>
+            <div class="stat-card info">
+                <div class="stat-label">Pro</div>
+                <div class="stat-value">{{ stats.subscription_types.pro }}</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="card">
+            <form method="GET" action="/admin/users" class="search-filters">
+                <div class="search-box">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" name="search" placeholder="Поиск по имени, username или ID..." value="{{ search or '' }}">
+                </div>
+
+                <select name="subscription" class="form-select" style="width: auto;">
+                    <option value="">Все подписки</option>
+                    <option value="free" {% if subscription_filter == 'free' %}selected{% endif %}>Free</option>
+                    <option value="basic" {% if subscription_filter == 'basic' %}selected{% endif %}>Basic</option>
+                    <option value="pro" {% if subscription_filter == 'pro' %}selected{% endif %}>Pro</option>
+                </select>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-filter"></i>
+                    Фильтр
+                </button>
+
+                {% if search or subscription_filter %}
+                <a href="/admin/users" class="btn btn-secondary">
+                    <i class="fas fa-times"></i>
+                    Сброс
+                </a>
+                {% endif %}
+            </form>
+        </div>
+
+        <!-- Users Table -->
+        <div class="card">
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Пользователь</th>
+                            <th>Telegram ID</th>
+                            <th>Подписка</th>
+                            <th>Осталось дней</th>
+                            <th>AI запросов</th>
+                            <th>Последняя активность</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>#{{ user.id }}</td>
+                            <td>
+                                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                    <div style="width: 40px; height: 40px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600;">
+                                        {{ user.first_name[0] if user.first_name else '?' }}
+                                    </div>
+                                    <div>
+                                        <div style="font-weight: 600;">{{ user.first_name or 'Без имени' }}</div>
+                                        <div style="font-size: 0.875rem; color: var(--secondary);">@{{ user.username or 'нет username' }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><code style="background: var(--gray-100); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">{{ user.telegram_id }}</code></td>
+                            <td>
+                                <span class="badge 
+                                    {% if user.subscription_type == 'free' %}badge-secondary
+                                    {% elif user.subscription_type == 'basic' %}badge-warning
+                                    {% else %}badge-success
+                                    {% endif %}">
+                                    {{ user.subscription_type.upper() }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if user.subscription_active %}
+                                    <span style="color: var(--success); font-weight: 600;">{{ user.days_left }} дн.</span>
+                                {% else %}
+                                    <span style="color: var(--secondary);">—</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ user.ai_questions_today }}/5</td>
+                            <td>
+                                {% if user.last_active %}
+                                    {{ user.last_active.strftime('%d.%m.%Y %H:%M') }}
+                                {% else %}
+                                    Никогда
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="/admin/users/{{ user.id }}" class="btn btn-sm btn-primary" style="margin-right: 0.5rem;">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if total_pages > 1 %}
+            <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1.5rem;">
+                {% if page > 1 %}
+                <a href="/admin/users?page={{ page - 1 }}{% if search %}&search={{ search }}{% endif %}{% if subscription_filter %}&subscription={{ subscription_filter }}{% endif %}" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+                {% endif %}
+
+                <span style="padding: 0.375rem 0.75rem; background: var(--gray-100); border-radius: 0.375rem; font-weight: 500;">
+                    Страница {{ page }} из {{ total_pages }}
+                </span>
+
+                {% if page < total_pages %}
+                <a href="/admin/users?page={{ page + 1 }}{% if search %}&search={{ search }}{% endif %}{% if subscription_filter %}&subscription={{ subscription_filter }}{% endif %}" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

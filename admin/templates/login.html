@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Вход в Admin Panel - MealBot{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-box">
+        <h1>🍽️ MealBot</h1>
+        <p>Admin Panel</p>
+
+        {% if error %}
+        <div class="alert alert-error" style="margin-bottom: 1rem;">
+            <i class="fas fa-exclamation-circle"></i>
+            Неверный логин или пароль
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/admin/login">
+            <div class="form-group">
+                <label class="form-label">Логин</label>
+                <input type="text" name="username" class="form-input" required autofocus>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Пароль</label>
+                <input type="password" name="password" class="form-input" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
+                <i class="fas fa-sign-in-alt"></i>
+                Войти
+            </button>
+        </form>
+
+        <p style="margin-top: 1.5rem; font-size: 0.875rem; color: var(--secondary); text-align: center;">
+            Защищено сессией на 8 часов
+        </p>
+    </div>
+</div>
+{% endblock %}
