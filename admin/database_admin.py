@@ -3,46 +3,49 @@ Database queries for admin panel
 """
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
-from sqlalchemy import select, func, desc, asc, update, delete, and_
+from sqlalchemy import select, func, desc, asc, update, delete, and_, or_
 from sqlalchemy.orm import selectinload
+from sqlalchemy import String
 
 # Импортируем из основного проекта
 import sys
-sys.path.append('..')
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from database import async_session
 from models import User, Recipe, Favorite, CookingHistory, MealPlan
 
 
 class AdminDatabase:
     """Класс для админских запросов к БД"""
-
+    
     # ==================== USERS ====================
-
+    
     @staticmethod
     async def get_users_stats() -> Dict[str, Any]:
         """Статистика по пользователям"""
         async with async_session() as session:
             # Всего пользователей
             total = await session.scalar(select(func.count(User.id)))
-
+            
             # Новые за 24 часа
             last_24h = await session.scalar(
                 select(func.count(User.id))
                 .where(User.created_at >= datetime.utcnow() - timedelta(hours=24))
             )
-
+            
             # Новые за 7 дней
             last_7d = await session.scalar(
                 select(func.count(User.id))
                 .where(User.created_at >= datetime.utcnow() - timedelta(days=7))
             )
-
+            
             # Активные сегодня
             active_today = await session.scalar(
                 select(func.count(User.id))
                 .where(User.last_active >= datetime.utcnow() - timedelta(hours=24))
             )
-
+            
             # По типам подписки
             sub_stats = {}
             for sub_type in ["free", "basic", "pro"]:
@@ -51,7 +54,7 @@ class AdminDatabase:
                     .where(User.subscription_type == sub_type)
                 )
                 sub_stats[sub_type] = count
-
+            
             # С подпиской (активной)
             now = datetime.utcnow()
             with_active_sub = await session.scalar(
@@ -61,17 +64,17 @@ class AdminDatabase:
                     User.subscription_expires > now
                 ))
             )
-
+            
             return {
-                "total": total,
-                "last_24h": last_24h,
-                "last_7d": last_7d,
-                "active_today": active_today,
+                "total": total or 0,
+                "last_24h": last_24h or 0,
+                "last_7d": last_7d or 0,
+                "active_today": active_today or 0,
                 "subscription_types": sub_stats,
-                "with_active_subscription": with_active_sub,
+                "with_active_subscription": with_active_sub or 0,
                 "conversion_rate": round(with_active_sub / total * 100, 2) if total > 0 else 0
             }
-
+    
     @staticmethod
     async def get_users_list(
         skip: int = 0,
@@ -84,41 +87,40 @@ class AdminDatabase:
         """Список пользователей с фильтрацией"""
         async with async_session() as session:
             query = select(User)
-
+            
             # Фильтр по поиску
             if search:
                 query = query.where(
                     or_(
                         User.username.ilike(f"%{search}%"),
-                        User.first_name.ilike(f"%{search}%"),
-                        User.telegram_id.cast(String).ilike(f"%{search}%")
+                        User.first_name.ilike(f"%{search}%")
                     )
                 )
-
+            
             # Фильтр по подписке
             if subscription_type:
                 query = query.where(User.subscription_type == subscription_type)
-
+            
             # Сортировка
             sort_column = getattr(User, sort_by, User.created_at)
             if sort_order == "desc":
                 query = query.order_by(desc(sort_column))
             else:
                 query = query.order_by(asc(sort_column))
-
+            
             query = query.offset(skip).limit(limit)
-
+            
             result = await session.execute(query)
             users = result.scalars().all()
-
+            
             return [AdminDatabase._user_to_dict(u) for u in users]
-
+    
     @staticmethod
     def _user_to_dict(user: User) -> Dict[str, Any]:
         """Конвертация User в dict"""
         now = datetime.utcnow()
         sub_active = user.subscription_expires and user.subscription_expires > now
-
+        
         return {
             "id": user.id,
             "telegram_id": user.telegram_id,
@@ -134,7 +136,7 @@ class AdminDatabase:
             "daily_calories": user.daily_calories,
             "family_size": user.family_size
         }
-
+    
     @staticmethod
     async def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
         """Получить пользователя по ID"""
@@ -144,7 +146,7 @@ class AdminDatabase:
             )
             user = result.scalar_one_or_none()
             return AdminDatabase._user_to_dict(user) if user else None
-
+    
     @staticmethod
     async def update_user_subscription(
         user_id: int,
@@ -154,7 +156,7 @@ class AdminDatabase:
         """Обновить подписку пользователя"""
         async with async_session() as session:
             expires = datetime.utcnow() + timedelta(days=days)
-
+            
             await session.execute(
                 update(User)
                 .where(User.id == user_id)
@@ -165,7 +167,7 @@ class AdminDatabase:
             )
             await session.commit()
             return True
-
+    
     @staticmethod
     async def delete_user(user_id: int) -> bool:
         """Удалить пользователя"""
@@ -175,15 +177,15 @@ class AdminDatabase:
             )
             await session.commit()
             return True
-
+    
     # ==================== RECIPES ====================
-
+    
     @staticmethod
     async def get_recipes_stats() -> Dict[str, Any]:
         """Статистика по рецептам"""
         async with async_session() as session:
             total = await session.scalar(select(func.count(Recipe.id)))
-
+            
             # По типам приёма пищи
             meal_stats = {}
             for meal in ["breakfast", "lunch", "snack", "dinner"]:
@@ -192,19 +194,19 @@ class AdminDatabase:
                     .where(Recipe.meal_type == meal)
                 )
                 meal_stats[meal] = count
-
+            
             # Премиум vs бесплатные
             premium_count = await session.scalar(
                 select(func.count(Recipe.id)).where(Recipe.is_premium == True)
             )
-
+            
             return {
-                "total": total,
+                "total": total or 0,
                 "by_meal_type": meal_stats,
-                "premium": premium_count,
-                "free": total - premium_count
+                "premium": premium_count or 0,
+                "free": (total or 0) - (premium_count or 0)
             }
-
+    
     @staticmethod
     async def get_recipes_list(
         skip: int = 0,
@@ -217,7 +219,7 @@ class AdminDatabase:
         """Список рецептов с фильтрацией"""
         async with async_session() as session:
             query = select(Recipe)
-
+            
             if day_number:
                 query = query.where(Recipe.day_number == day_number)
             if meal_type:
@@ -226,15 +228,15 @@ class AdminDatabase:
                 query = query.where(Recipe.is_premium == is_premium)
             if search:
                 query = query.where(Recipe.title.ilike(f"%{search}%"))
-
+            
             query = query.order_by(Recipe.day_number, Recipe.meal_type)
             query = query.offset(skip).limit(limit)
-
+            
             result = await session.execute(query)
             recipes = result.scalars().all()
-
+            
             return [AdminDatabase._recipe_to_dict(r) for r in recipes]
-
+    
     @staticmethod
     def _recipe_to_dict(recipe: Recipe) -> Dict[str, Any]:
         """Конвертация Recipe в dict"""
@@ -250,7 +252,7 @@ class AdminDatabase:
             "cooking_time": recipe.cooking_time,
             "shopping_preview": recipe.shopping[:100] + "..." if recipe.shopping else ""
         }
-
+    
     @staticmethod
     async def get_recipe_by_id(recipe_id: int) -> Optional[Dict[str, Any]]:
         """Получить рецепт по ID с полными данными"""
@@ -261,7 +263,7 @@ class AdminDatabase:
             recipe = result.scalar_one_or_none()
             if not recipe:
                 return None
-
+            
             return {
                 "id": recipe.id,
                 "day_number": recipe.day_number,
@@ -279,13 +281,13 @@ class AdminDatabase:
                 "is_premium": recipe.is_premium,
                 "tags": recipe.tags or []
             }
-
+    
     @staticmethod
     async def create_or_update_recipe(recipe_data: Dict[str, Any]) -> int:
         """Создать или обновить рецепт"""
         async with async_session() as session:
             recipe_id = recipe_data.get("id")
-
+            
             if recipe_id:
                 # Update
                 await session.execute(
@@ -301,7 +303,7 @@ class AdminDatabase:
                 session.add(recipe)
                 await session.commit()
                 return recipe.id
-
+    
     @staticmethod
     async def delete_recipe(recipe_id: int) -> bool:
         """Удалить рецепт"""
@@ -311,25 +313,25 @@ class AdminDatabase:
             )
             await session.commit()
             return True
-
+    
     # ==================== ANALYTICS ====================
-
+    
     @staticmethod
     async def get_engagement_stats() -> Dict[str, Any]:
         """Статистика вовлечённости"""
         async with async_session() as session:
             # Всего избранного
             favorites_count = await session.scalar(select(func.count(Favorite.id)))
-
+            
             # Всего приготовлено (история)
             cooked_count = await session.scalar(select(func.count(CookingHistory.id)))
-
+            
             # Средний рейтинг
             avg_rating = await session.scalar(
                 select(func.avg(CookingHistory.rating))
                 .where(CookingHistory.rating.isnot(None))
             )
-
+            
             # Топ популярных рецептов (по избранному)
             top_favorites = await session.execute(
                 select(Recipe.title, func.count(Favorite.id).label("count"))
@@ -338,14 +340,14 @@ class AdminDatabase:
                 .order_by(desc("count"))
                 .limit(10)
             )
-
+            
             return {
-                "total_favorites": favorites_count,
-                "total_cooked": cooked_count,
+                "total_favorites": favorites_count or 0,
+                "total_cooked": cooked_count or 0,
                 "average_rating": round(avg_rating, 2) if avg_rating else 0,
                 "top_favorites": [(title, count) for title, count in top_favorites.all()]
             }
-
+    
     @staticmethod
     async def get_retention_stats() -> Dict[str, Any]:
         """Статистика удержания (cohort analysis)"""
@@ -355,7 +357,7 @@ class AdminDatabase:
             for i in range(14):
                 date = datetime.utcnow().date() - timedelta(days=i)
                 next_date = date + timedelta(days=1)
-
+                
                 # Зарегистрировались в этот день
                 registered = await session.scalar(
                     select(func.count(User.id))
@@ -364,7 +366,7 @@ class AdminDatabase:
                         User.created_at < datetime.combine(next_date, datetime.min.time())
                     )
                 )
-
+                
                 # Из них активны сегодня
                 active = await session.scalar(
                     select(func.count(User.id))
@@ -374,19 +376,14 @@ class AdminDatabase:
                         User.last_active >= datetime.utcnow() - timedelta(hours=24)
                     )
                 )
-
-                retention = round(active / registered * 100, 1) if registered > 0 else 0
-
+                
+                retention = round(active / registered * 100, 1) if registered and registered > 0 else 0
+                
                 cohorts.append({
                     "date": date.strftime("%Y-%m-%d"),
-                    "registered": registered,
-                    "active_today": active,
+                    "registered": registered or 0,
+                    "active_today": active or 0,
                     "retention": retention
                 })
-
+            
             return {"cohorts": cohorts}
-
-
-# Добавляем импорт для поиска
-from sqlalchemy import or_
-from sqlalchemy import String
