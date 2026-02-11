@@ -13,8 +13,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
-# Добавляем путь к основному проекту
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Добавляем путь к основному проекту (родительская папка)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 
 from database import init_db
 from auth import (
@@ -22,7 +24,6 @@ from auth import (
     SESSION_COOKIE_NAME, MAX_AGE
 )
 from database_admin import AdminDatabase
-
 
 # Lifespan для инициализации
 @asynccontextmanager
